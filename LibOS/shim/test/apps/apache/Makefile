@@ -47,27 +47,27 @@ endif
 $(INSTALL_DIR)/lib/libapr-1.so.0: $(APR_DIR)
 	#cd $< && patch -p1 < ../disable-epoll.patch
 	cd $< && ./configure --prefix=$(INSTALL_DIR)
-	cd $< && $(MAKE) -j$(NPROCS) $(MAKE_FLAGS)
-	cd $< && $(MAKE) install
+	cd $< && ($(MAKE) -j$(NPROCS) $(MAKE_FLAGS) 2>&1 >> build.log)
+	cd $< && ($(MAKE) install 2>&1 >> build.log)
 
 $(INSTALL_DIR)/lib/libaprutil-1.so.0: $(APRUTIL_DIR) $(INSTALL_DIR)/lib/libapr-1.so.0
 	cd $< && ./configure --prefix=$(INSTALL_DIR) --with-apr=$(INSTALL_DIR)
-	cd $< && $(MAKE) -j$(NPROCS) $(MAKE_FLAGS)
-	cd $< && $(MAKE) install
+	cd $< && ($(MAKE) -j$(NPROCS) $(MAKE_FLAGS) 2>&1 >> build.log)
+	cd $< && ($(MAKE) install 2>&1 >> build.log)
 
 $(INSTALL_DIR)/bin/httpd $(INSTALL_DIR)/bin/apxs: $(INSTALL_DIR)/lib/libapr-1.so.0 $(INSTALL_DIR)/lib/libaprutil-1.so.0
 	[ -d $(HTTPD_DIR) ] || tar -xzf $(HTTPD_DIR).tar.gz
 	[ -f $(HTTPD_DIR)/Makefile ] || ( \
 	cd $(HTTPD_DIR) && ./configure --prefix=$(INSTALL_DIR) --with-apr=$(INSTALL_DIR) \
 	--with-apr-util=$(INSTALL_DIR) --with-mpm=prefork)
-	cd $(HTTPD_DIR) && $(MAKE) -j$(NPROCS) $(MAKE_FLAGS)
-	cd $(HTTPD_DIR) && $(MAKE) install
+	cd $(HTTPD_DIR) && ($(MAKE) -j$(NPROCS) $(MAKE_FLAGS) 2>&1 >> build.log)
+	cd $(HTTPD_DIR) && ($(MAKE) install 2>&1 >> build.log)
 
 $(INSTALL_DIR)/modules/libphp5.so: $(PHP_DIR) $(INSTALL_DIR)/bin/apxs
 	cd $< && ./configure --prefix=$(INSTALL_DIR) --with-apxs2=$(INSTALL_DIR)/bin/apxs \
 	--disable-cgi --disable-cli --disable-soap
-	cd $< && $(MAKE) -j$(NPROCS) $(MAKE_FLAGS)
-	cd $< && $(MAKE) install
+	cd $< && ($(MAKE) -j$(NPROCS) $(MAKE_FLAGS) 2>&1 >> build.log)
+	cd $< && ($(MAKE) install 2>&1 >> build.log)
 
 build-modules: $(INSTALL_DIR)/modules/mod_auth_basic_sandbox.so
 
