@@ -21,8 +21,8 @@ $(SRCDIR)/configure: $(SRCDIR).tar.xz
 
 $(BUILDDIR)/runltp: $(SRCDIR)/configure
 	cd $(SRCDIR) && ./configure
-	cd $(SRCDIR) && make all
-	cd $(SRCDIR) && make "DESTDIR=$(PWD)" SKIP_IDCHECK=1 install
+	cd $(SRCDIR) && ($(MAKE) all >> build.log 2>> build.log)
+	cd $(SRCDIR) && ($(MAKE) "DESTDIR=$(PWD)" SKIP_IDCHECK=1 install >> build.log 2>> build.log)
 	patch -d $(dir $@) < runltp.patch
 
 $(BUILDDIR)/bin/run_in_graphene.awk: run_in_graphene.awk $(BUILDDIR)/runltp
