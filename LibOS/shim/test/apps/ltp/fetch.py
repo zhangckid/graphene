@@ -85,11 +85,10 @@ def finish(result):
                     current_broken[test_subtest] = 1
                     reported = True
 
-                elif not result['finish']:
-                    print CRED + "[Hanged ] " + test + CEND
-                    current_hanged[test] = 1
-                    reported = True
-                    break
+            if not result['finish']:
+                print CRED + "[Hanged ] " + test + CEND
+                current_hanged[test] = 1
+                reported = True
 
             if (not reported):
                 print >>broken_tests_fh, test
