@@ -135,10 +135,10 @@ struct parser_table {
     { .slow = 0, .parser = { NULL } }, /* sendmsg */
     { .slow = 1, .parser = { NULL } }, /* recvmsg */
     { .slow = 0, .parser = { NULL } }, /* shutdown */
-    { .slow = 0, .parser = { NULL } }, /* bind */
+    { .slow = 0, .parser = { NULL, &parse_sockaddr } }, /* bind */
     { .slow = 0, .parser = { NULL } }, /* listen */
-    { .slow = 0, .parser = { NULL } }, /* getsockname */
-    { .slow = 0, .parser = { NULL } }, /* getpeername */
+    { .slow = 0, .parser = { NULL, &parse_sockaddr } }, /* getsockname */
+    { .slow = 0, .parser = { NULL, &parse_sockaddr } }, /* getpeername */
     { .slow = 0, .stop = 3,            /* socketpair */
       .parser = { &parse_domain, &parse_socktype, NULL, &parse_pipe_fds } },
     { .slow = 0, .parser = { NULL } }, /* setsockopt */

@@ -40,10 +40,7 @@ def run(cmd, timeout, test):
 def finish(result):
     try:
         test = result['test']
-        if not result['finish']:
-            print CRED + "[Hanged ] " + test + CEND
-            current_hanged[test] = 1
-        else:
+        if test:
             reported = False
             count = 1
             for output in result['output']:
@@ -87,6 +84,12 @@ def finish(result):
                     print "[Broken(a) ] " + test_subtest + CEND
                     current_broken[test_subtest] = 1
                     reported = True
+
+                elif not result['finish']:
+                    print CRED + "[Hanged ] " + test + CEND
+                    current_hanged[test] = 1
+                    reported = True
+                    break
 
             if (not reported):
                 print >>broken_tests_fh, test
