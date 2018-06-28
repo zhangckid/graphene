@@ -36,9 +36,9 @@
 #include <linux/time.h>
 #include <asm/fcntl.h>
 
-unsigned long _DkSystemTimeQuery (void)
+uint64_t _DkSystemTimeQuery (void)
 {
-    unsigned long microsec;
+    uint64_t microsec;
     int ret = ocall_gettime(&microsec);
     assert(!ret);
     return microsec;

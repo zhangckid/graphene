@@ -196,6 +196,8 @@ extern struct pal_enclave_config {
     (INLINE_SYSCALL(clone, 4, CLONE_VM|CLONE_VFORK, 0, NULL, NULL))
 #endif
 
+extern int clock_gettime(int clk_id, struct timespec *tp);
+
 #endif /* IN_ENCLAVE */
 
 #define DBG_E   0x01
