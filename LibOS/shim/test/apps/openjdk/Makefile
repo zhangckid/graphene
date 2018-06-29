@@ -1,11 +1,17 @@
-JAVA_HOME ?= $(shell readlink -f /usr/bin/java | sed "s:/bin/java::")
-JAVAC = $(JAVA_HOME)/bin/javac
+JAVA_VERSION = 1.8.0
+SRC_VERSION = 8u
+SRC_HG_URL = http://hg.openjdk.java.net/jdk$(SRC_VERSION)/jdk$(SRC_VERSION)/
+SRC_HG_REV = 7abd14dd301d
+SRC_DIR = jdk$(SRC_VERSION)
+INSTALL_DIR = build
+JAVA_HOME = $(INSTALL_DIR)/jvm/openjdk-$(JAVA_VERSION)-internal/jre
+JAVAC = $(INSTALL_DIR)/jvm/openjdk-$(JAVA_VERSION)-internal/bin/javac
 
 CLASSES = $(patsubst %.java,%.class,$(wildcard classes/*.java))
 SUITES = classes/apache-sshd-1.2.0/sshd-core/target/sshd-core-1.2.0.jar \
 	 classes/jmh-jdk-1.0/target/jmh-jdk-microbenchmarks-1.0-SNAPSHOT.jar
 
-target = $(CLASSES) $(SUITES)
+target = $(JAVA_HOME) $(CLASSES) $(SUITES)
 exec_target = java.manifest
 
 clean-extra = clean-classes
@@ -16,6 +22,14 @@ extra_rules = \
 
 level = ../../
 include ../../Makefile
+
+$(JAVA_HOME): $(SRC_DIR)/configure
+	cd $(SRC_DIR) && sh configure --prefix=$(abspath $(INSTALL_DIR))
+	cd $(SRC_DIR) && make install
+
+$(SRC_DIR)/configure:
+	hg clone $(SRC_HG_URL) -r $(SRC_HG_REV)
+	cd $(SRC_DIR) && sh get_source.sh
 
 %.class: %.java
 	javac $<
