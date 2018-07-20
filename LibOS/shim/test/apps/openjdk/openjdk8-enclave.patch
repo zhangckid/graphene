@@ -1,0 +1,420 @@
+diff --git a/hotspot/make/linux/makefiles/vm.make b/hotspot/make/linux/makefiles/vm.make
+index 8f836fe..ff510ee 100644
+--- a/hotspot/make/linux/makefiles/vm.make
++++ b/hotspot/make/linux/makefiles/vm.make
+@@ -29,6 +29,7 @@
+ MAKEFILES_DIR=$(GAMMADIR)/make/$(Platform_os_family)/makefiles
+ include $(MAKEFILES_DIR)/rules.make
+ include $(GAMMADIR)/make/altsrc.make
++include $(MAKEFILES_DIR)/rules.make
+ 
+ default: build
+ 
+diff --git a/hotspot/make/linux/makefiles/enclave.make b/hotspot/make/linux/makefiles/enclave.make
+new file mode 100644
+index 0000000..ebfc96d
+--- /dev/null
++++ b/hotspot/make/linux/makefiles/enclave.make
+@@ -0,0 +1,42 @@
++#
++# Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
++# DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++#
++# This code is free software; you can redistribute it and/or modify it
++# under the terms of the GNU General Public License version 2 only, as
++# published by the Free Software Foundation.
++#
++# This code is distributed in the hope that it will be useful, but WITHOUT
++# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++# version 2 for more details (a copy is included in the LICENSE file that
++# accompanied this code).
++#
++# You should have received a copy of the GNU General Public License version
++# 2 along with this work; if not, write to the Free Software Foundation,
++# Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++#
++# Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++# or visit www.oracle.com if you need additional information or have any
++# questions.
++#
++#
++
++# Force all variables to false, overriding any other
++# setting that may have occurred in the makefiles. These
++# can still be overridden by passing the variable as an
++# argument to 'make'
++INCLUDE_ALL_GCS := false
++INCLUDE_JNI_CHECK := false
++INCLUDE_CDS := false
++
++OPT_CFLAGS_DEFAULT := SIZE
++CXXFLAGS += -DENCLAVE -Os -ffunction-sections -fdata-sections
++CFLAGS += -DENCLAVE -Os -ffunction-sections -fdata-sections
++LFLAGS += -Wl,-z,max-page-size=0x1000 -Wl,--gc-sections
+diff --git a/hotspot/src/os/linux/vm/os_linux.cpp b/hotspot/src/os/linux/vm/os_linux.cpp
+index df70123..ed098c7 100644
+--- a/hotspot/src/os/linux/vm/os_linux.cpp
++++ b/hotspot/src/os/linux/vm/os_linux.cpp
+@@ -267,6 +267,9 @@ static const char *unstable_chroot_error = "/proc file system not found.\n"
+                      "environment on Linux when /proc filesystem is not mounted.";
+ 
+ void os::Linux::initialize_system_info() {
++#ifdef ENCLAVE
++  set_processor_count(1);
++#else
+   set_processor_count(sysconf(_SC_NPROCESSORS_CONF));
+   if (processor_count() == 1) {
+     pid_t pid = os::Linux::gettid();
+@@ -279,6 +282,7 @@ void os::Linux::initialize_system_info() {
+       fclose(fp);
+     }
+   }
++#endif
+   _physical_memory = (julong)sysconf(_SC_PHYS_PAGES) * (julong)sysconf(_SC_PAGESIZE);
+   assert(processor_count() > 0, "linux error");
+ }
+@@ -5040,6 +5044,12 @@ void os::make_polling_page_readable(void) {
+   }
+ };
+ 
++#ifdef ENCLAVE
++int os::active_processor_count() {
++  /* assume only one active processor */
++  return (1);
++}
++#else
+ static int os_cpu_count(const cpu_set_t* cpus) {
+   int count = 0;
+   // only look up to the number of configured processors
+@@ -5077,6 +5087,7 @@ int os::active_processor_count() {
+   assert(cpu_count > 0 && cpu_count <= processor_count(), "sanity check");
+   return cpu_count;
+ }
++#endif /* !ENCLAVE */
+ 
+ void os::set_native_thread_name(const char *name) {
+   // Not yet implemented.
+diff --git a/hotspot/src/share/vm/compiler/compileBroker.cpp b/hotspot/src/share/vm/compiler/compileBroker.cpp
+index dad99ec..bcfd6f1 100644
+--- a/hotspot/src/share/vm/compiler/compileBroker.cpp
++++ b/hotspot/src/share/vm/compiler/compileBroker.cpp
+@@ -697,7 +697,9 @@ void CompileQueue::free_all() {
+ //
+ // Get the next CompileTask from a CompileQueue
+ CompileTask* CompileQueue::get() {
++#ifndef ENCLAVE
+   NMethodSweeper::possibly_sweep();
++#endif
+ 
+   MutexLocker locker(lock());
+   // If _first is NULL we have no more compile jobs. There are two reasons for
+diff --git a/hotspot/src/share/vm/opto/compile.cpp b/hotspot/src/share/vm/opto/compile.cpp
+index 2ba5ca5..a288bb7 100644
+--- a/hotspot/src/share/vm/opto/compile.cpp
++++ b/hotspot/src/share/vm/opto/compile.cpp
+@@ -3532,6 +3532,7 @@ void Compile::verify_graph_edges(bool no_dead_code) {
+ // Currently supported:
+ // - G1 pre-barriers (see GraphKit::g1_write_barrier_pre())
+ void Compile::verify_barriers() {
++#if INCLUDE_ALL_GCS
+   if (UseG1GC) {
+     // Verify G1 pre-barriers
+     const int marking_offset = in_bytes(JavaThread::satb_mark_queue_offset() + PtrQueue::byte_offset_of_active());
+@@ -3591,6 +3592,7 @@ void Compile::verify_barriers() {
+       }
+     }
+   }
++#endif /* INCLUDE_ALL_GCS */
+ }
+ 
+ #endif
+diff --git a/hotspot/src/share/vm/opto/escape.cpp b/hotspot/src/share/vm/opto/escape.cpp
+index bcd2e78..b83390b 100644
+--- a/hotspot/src/share/vm/opto/escape.cpp
++++ b/hotspot/src/share/vm/opto/escape.cpp
+@@ -520,6 +520,7 @@ void ConnectionGraph::add_node_to_connection_graph(Node *n, Unique_Node_List *de
+           break;
+         // Stored value escapes in unsafe access.
+         if ((opcode == Op_StoreP) && (adr_type == TypeRawPtr::BOTTOM)) {
++#if INCLUDE_ALL_GCS
+           // Pointer stores in G1 barriers looks like unsafe access.
+           // Ignore such stores to be able scalar replace non-escaping
+           // allocations.
+@@ -542,6 +543,7 @@ void ConnectionGraph::add_node_to_connection_graph(Node *n, Unique_Node_List *de
+               }
+             }
+           }
++#endif
+           delayed_worklist->push(n); // Process unsafe access later.
+           break;
+         }
+diff --git a/hotspot/src/share/vm/opto/graphKit.cpp b/hotspot/src/share/vm/opto/graphKit.cpp
+index db5e7da..7a63c82 100644
+--- a/hotspot/src/share/vm/opto/graphKit.cpp
++++ b/hotspot/src/share/vm/opto/graphKit.cpp
+@@ -24,8 +24,10 @@
+ 
+ #include "precompiled.hpp"
+ #include "compiler/compileLog.hpp"
+-#include "gc_implementation/g1/g1SATBCardTableModRefBS.hpp"
+-#include "gc_implementation/g1/heapRegion.hpp"
++#if INCLUDE_ALL_GCS
++# include "gc_implementation/g1/g1SATBCardTableModRefBS.hpp"
++# include "gc_implementation/g1/heapRegion.hpp"
++#endif
+ #include "gc_interface/collectedHeap.hpp"
+ #include "memory/barrierSet.hpp"
+ #include "memory/cardTableModRefBS.hpp"
+@@ -1513,10 +1515,12 @@ void GraphKit::pre_barrier(bool do_load,
+   BarrierSet* bs = Universe::heap()->barrier_set();
+   set_control(ctl);
+   switch (bs->kind()) {
++#if INCLUDE_ALL_GCS
+     case BarrierSet::G1SATBCT:
+     case BarrierSet::G1SATBCTLogging:
+       g1_write_barrier_pre(do_load, obj, adr, adr_idx, val, val_type, pre_val, bt);
+       break;
++#endif
+ 
+     case BarrierSet::CardTableModRef:
+     case BarrierSet::CardTableExtension:
+@@ -1533,9 +1537,11 @@ void GraphKit::pre_barrier(bool do_load,
+ bool GraphKit::can_move_pre_barrier() const {
+   BarrierSet* bs = Universe::heap()->barrier_set();
+   switch (bs->kind()) {
++#if INCLUDE_ALL_GCS
+     case BarrierSet::G1SATBCT:
+     case BarrierSet::G1SATBCTLogging:
+       return true; // Can move it if no safepoint
++#endif
+ 
+     case BarrierSet::CardTableModRef:
+     case BarrierSet::CardTableExtension:
+@@ -1560,10 +1566,12 @@ void GraphKit::post_barrier(Node* ctl,
+   BarrierSet* bs = Universe::heap()->barrier_set();
+   set_control(ctl);
+   switch (bs->kind()) {
++#if INCLUDE_ALL_GCS
+     case BarrierSet::G1SATBCT:
+     case BarrierSet::G1SATBCTLogging:
+       g1_write_barrier_post(store, obj, adr, adr_idx, val, bt, use_precise);
+       break;
++#endif
+ 
+     case BarrierSet::CardTableModRef:
+     case BarrierSet::CardTableExtension:
+@@ -3840,6 +3848,7 @@ void GraphKit::write_barrier_post(Node* oop_store,
+   final_sync(ideal);
+ }
+ 
++#if INCLUDE_ALL_GCS
+ // G1 pre/post barriers
+ void GraphKit::g1_write_barrier_pre(bool do_load,
+                                     Node* obj,
+@@ -4086,6 +4095,8 @@ void GraphKit::g1_write_barrier_post(Node* oop_store,
+ }
+ #undef __
+ 
++#endif /* INCLUDE_ALL_GCS */
++
+ 
+ 
+ Node* GraphKit::load_String_offset(Node* ctrl, Node* str) {
+diff --git a/hotspot/src/share/vm/opto/macro.cpp b/hotspot/src/share/vm/opto/macro.cpp
+index ad030fb..a37a8f8 100644
+--- a/hotspot/src/share/vm/opto/macro.cpp
++++ b/hotspot/src/share/vm/opto/macro.cpp
+@@ -217,7 +217,9 @@ void PhaseMacroExpand::extract_call_projections(CallNode *call) {
+ // Eliminate a card mark sequence.  p2x is a ConvP2XNode
+ void PhaseMacroExpand::eliminate_card_mark(Node* p2x) {
+   assert(p2x->Opcode() == Op_CastP2X, "ConvP2XNode required");
++#if INCLUDE_ALL_GCS
+   if (!UseG1GC) {
++#endif
+     // vanilla/CMS post barrier
+     Node *shift = p2x->unique_out();
+     Node *addp = shift->unique_out();
+@@ -233,6 +235,7 @@ void PhaseMacroExpand::eliminate_card_mark(Node* p2x) {
+       assert(mem->is_Store(), "store required");
+       _igvn.replace_node(mem, mem->in(MemNode::Memory));
+     }
++#if INCLUDE_ALL_GCS
+   } else {
+     // G1 pre/post barriers
+     assert(p2x->outcnt() <= 2, "expects 1 or 2 users: Xor and URShift nodes");
+@@ -303,6 +306,7 @@ void PhaseMacroExpand::eliminate_card_mark(Node* p2x) {
+     assert(p2x->outcnt() == 0 || p2x->unique_out()->Opcode() == Op_URShiftX, "");
+     _igvn.replace_node(p2x, top());
+   }
++#endif
+ }
+ 
+ // Search for a memory operation for the specified memory slice.
+diff --git a/hotspot/src/share/vm/opto/runtime.cpp b/hotspot/src/share/vm/opto/runtime.cpp
+index 3bcc533..5d37916 100644
+--- a/hotspot/src/share/vm/opto/runtime.cpp
++++ b/hotspot/src/share/vm/opto/runtime.cpp
+@@ -34,8 +34,10 @@
+ #include "compiler/compileBroker.hpp"
+ #include "compiler/compilerOracle.hpp"
+ #include "compiler/oopMap.hpp"
+-#include "gc_implementation/g1/g1SATBCardTableModRefBS.hpp"
+-#include "gc_implementation/g1/heapRegion.hpp"
++#if INCLUDE_ALL_GCS
++# include "gc_implementation/g1/g1SATBCardTableModRefBS.hpp"
++# include "gc_implementation/g1/heapRegion.hpp"
++#endif
+ #include "gc_interface/collectedHeap.hpp"
+ #include "interpreter/bytecode.hpp"
+ #include "interpreter/interpreter.hpp"
+@@ -154,8 +156,10 @@ bool OptoRuntime::generate(ciEnv* env) {
+   gen(env, _multianewarray4_Java           , multianewarray4_Type         , multianewarray4_C               ,    0 , true , false, false);
+   gen(env, _multianewarray5_Java           , multianewarray5_Type         , multianewarray5_C               ,    0 , true , false, false);
+   gen(env, _multianewarrayN_Java           , multianewarrayN_Type         , multianewarrayN_C               ,    0 , true , false, false);
++# if INCLUDE_ALL_GCS
+   gen(env, _g1_wb_pre_Java                 , g1_wb_pre_Type               , SharedRuntime::g1_wb_pre        ,    0 , false, false, false);
+   gen(env, _g1_wb_post_Java                , g1_wb_post_Type              , SharedRuntime::g1_wb_post       ,    0 , false, false, false);
++# endif
+   gen(env, _complete_monitor_locking_Java  , complete_monitor_enter_Type  , SharedRuntime::complete_monitor_locking_C, 0, false, false, false);
+   gen(env, _rethrow_Java                   , rethrow_Type                 , rethrow_C                       ,    2 , true , false, true );
+ 
+diff --git a/hotspot/src/share/vm/runtime/globals.hpp b/hotspot/src/share/vm/runtime/globals.hpp
+index 794ce65..a94f73f 100644
+--- a/hotspot/src/share/vm/runtime/globals.hpp
++++ b/hotspot/src/share/vm/runtime/globals.hpp
+@@ -530,7 +530,7 @@ class CommandLineFlags {
+   lp64_product(intx, ObjectAlignmentInBytes, 8,                             \
+           "Default object alignment in bytes, 8 is minimum")                \
+                                                                             \
+-  product(bool, AssumeMP, false,                                            \
++  product(bool, AssumeMP, true,                                             \
+           "Instruct the VM to assume multiple processors are available")    \
+                                                                             \
+   /* UseMembar is theoretically a temp flag used for memory barrier         \
+diff --git a/hotspot/src/share/vm/runtime/vmStructs.cpp b/hotspot/src/share/vm/runtime/vmStructs.cpp
+index 8591001..4fd497f 100644
+--- a/hotspot/src/share/vm/runtime/vmStructs.cpp
++++ b/hotspot/src/share/vm/runtime/vmStructs.cpp
+@@ -263,6 +263,26 @@ typedef TwoOopHashtable<Symbol*, mtClass>     SymbolTwoOopHashtable;
+ // NOTE that there are platform-specific additions to this table in
+ // vmStructs_<os>_<cpu>.hpp.
+ 
++#if INCLUDE_ALL_GCS
++# define VM_STRUCTS_GCS(nonstatic_field) \
++  nonstatic_field(JavaThread,                  _satb_mark_queue,                              ObjPtrQueue)                           \
++  nonstatic_field(JavaThread,                  _dirty_card_queue,                             DirtyCardQueue)
++# define VM_STRUCTS_PTRQUEUE(nonstatic_field) \
++  nonstatic_field(PtrQueue,                    _active,                                      bool)                                   \
++  nonstatic_field(PtrQueue,                    _buf,                                         void**)                                 \
++  nonstatic_field(PtrQueue,                    _index,                                       size_t)
++# define VM_STRUCTS_FREECHUNK(volatile_nonstatic_field, nonstatic_field) \
++  volatile_nonstatic_field(FreeChunk,          _size,                                        size_t)                                 \
++  nonstatic_field(FreeChunk,                   _next,                                        FreeChunk*)                             \
++  nonstatic_field(FreeChunk,                   _prev,                                        FreeChunk*)                             \
++  nonstatic_field(AdaptiveFreeList<FreeChunk>, _size,                                        size_t)                                 \
++  nonstatic_field(AdaptiveFreeList<FreeChunk>, _count,                                       ssize_t)
++#else
++# define VM_STRUCTS_GCS(nonstatic_field)
++# define VM_STRUCTS_PTRQUEUE(nonstatic_field)
++# define VM_STRUCTS_FREECHUNK(volatile_nonstatic_field, nonstatic_field)
++#endif
++
+ #define VM_STRUCTS(nonstatic_field, \
+                    static_field, \
+                    unchecked_nonstatic_field, \
+@@ -941,8 +961,7 @@ typedef TwoOopHashtable<Symbol*, mtClass>     SymbolTwoOopHashtable;
+   nonstatic_field(JavaThread,                  _stack_size,                                   size_t)                                \
+   nonstatic_field(JavaThread,                  _vframe_array_head,                            vframeArray*)                          \
+   nonstatic_field(JavaThread,                  _vframe_array_last,                            vframeArray*)                          \
+-  nonstatic_field(JavaThread,                  _satb_mark_queue,                              ObjPtrQueue)                           \
+-  nonstatic_field(JavaThread,                  _dirty_card_queue,                             DirtyCardQueue)                        \
++  VM_STRUCTS_GCS(nonstatic_field) \
+   nonstatic_field(Thread,                      _resource_area,                                ResourceArea*)                         \
+   nonstatic_field(CompilerThread,              _env,                                          ciEnv*)                                \
+                                                                                                                                      \
+@@ -1286,19 +1305,13 @@ typedef TwoOopHashtable<Symbol*, mtClass>     SymbolTwoOopHashtable;
+   nonstatic_field(vframeArrayElement,          _bci,                                         int)                                    \
+   nonstatic_field(vframeArrayElement,          _method,                                      Method*)                                \
+                                                                                                                                      \
+-  nonstatic_field(PtrQueue,                    _active,                                      bool)                                   \
+-  nonstatic_field(PtrQueue,                    _buf,                                         void**)                                 \
+-  nonstatic_field(PtrQueue,                    _index,                                       size_t)                                 \
++  VM_STRUCTS_PTRQUEUE(nonstatic_field) \
+                                                                                                                                      \
+   nonstatic_field(AccessFlags,                 _flags,                                       jint)                                   \
+   nonstatic_field(elapsedTimer,                _counter,                                     jlong)                                  \
+   nonstatic_field(elapsedTimer,                _active,                                      bool)                                   \
+   nonstatic_field(InvocationCounter,           _counter,                                     unsigned int)                           \
+-  volatile_nonstatic_field(FreeChunk,          _size,                                        size_t)                                 \
+-  nonstatic_field(FreeChunk,                   _next,                                        FreeChunk*)                             \
+-  nonstatic_field(FreeChunk,                   _prev,                                        FreeChunk*)                             \
+-  nonstatic_field(AdaptiveFreeList<FreeChunk>, _size,                                        size_t)                                 \
+-  nonstatic_field(AdaptiveFreeList<FreeChunk>, _count,                                       ssize_t)
++  VM_STRUCTS_FREECHUNK(volatile_nonstatic_field, nonstatic_field)
+ 
+ 
+ //--------------------------------------------------------------------------------
+@@ -1332,6 +1345,22 @@ typedef TwoOopHashtable<Symbol*, mtClass>     SymbolTwoOopHashtable;
+ // NOTE that there are platform-specific additions to this table in
+ // vmStructs_<os>_<cpu>.hpp.
+ 
++#if INCLUDE_ALL_GCS
++# define VM_TYPES_GCS(declare_toplevel_type)                              \
++  declare_toplevel_type(ObjPtrQueue)                                      \
++  declare_toplevel_type(DirtyCardQueue)
++# define VM_TYPES_FREECHUNK(declare_toplevel_type)                        \
++  declare_toplevel_type(FreeChunk*)                                       \
++  declare_toplevel_type(AdaptiveFreeList<FreeChunk>*)                     \
++  declare_toplevel_type(AdaptiveFreeList<FreeChunk>)
++# define VM_TYPES_PTRQUEUE(declare_toplevel_type)                         \
++  declare_toplevel_type(PtrQueue)
++#else
++# define VM_TYPES_GCS(declare_toplevel_type)
++# define VM_TYPES_FREECHUNK(declare_toplevel_type)
++# define VM_TYPES_PTRQUEUE(declare_toplevel_type)
++#endif
++
+ #define VM_TYPES(declare_type,                                            \
+                  declare_toplevel_type,                                   \
+                  declare_oop_type,                                        \
+@@ -1527,8 +1556,7 @@ typedef TwoOopHashtable<Symbol*, mtClass>     SymbolTwoOopHashtable;
+   declare_toplevel_type(ThreadLocalAllocBuffer)                           \
+   declare_toplevel_type(VirtualSpace)                                     \
+   declare_toplevel_type(WaterMark)                                        \
+-  declare_toplevel_type(ObjPtrQueue)                                      \
+-  declare_toplevel_type(DirtyCardQueue)                                   \
++  VM_TYPES_GCS(declare_toplevel_type)                                     \
+                                                                           \
+   /* Pointers to Garbage Collection types */                              \
+                                                                           \
+@@ -2168,12 +2196,10 @@ typedef TwoOopHashtable<Symbol*, mtClass>     SymbolTwoOopHashtable;
+   /* Miscellaneous types */                                               \
+   /***************/                                                       \
+                                                                           \
+-  declare_toplevel_type(PtrQueue)                                         \
++  VM_TYPES_PTRQUEUE(declare_toplevel_type)                                \
+                                                                           \
+   /* freelist */                                                          \
+-  declare_toplevel_type(FreeChunk*)                                       \
+-  declare_toplevel_type(AdaptiveFreeList<FreeChunk>*)                     \
+-  declare_toplevel_type(AdaptiveFreeList<FreeChunk>)
++  VM_TYPES_FREECHUNK(declare_toplevel_type)
+ 
+ 
+ //--------------------------------------------------------------------------------
+diff --git a/jdk/make/CompileNativeLibraries.gmk b/jdk/make/CompileNativeLibraries.gmk
+index 68c80d1..de86d81 100644
+--- a/jdk/make/CompileNativeLibraries.gmk
++++ b/jdk/make/CompileNativeLibraries.gmk
+@@ -47,6 +47,10 @@ ifeq ($(USE_CLANG), true)
+   WARNING_CFLAGS += -Qunused-arguments
+ endif
+ 
++# Build with -ffunction-sections and -fdata-sections
++CFLAGS_JDKLIB += -ffunction-sections -fdata-sections
++CXXFLAGS_JDKLIB += -ffunction-sections -fdata-sections
++
+ # Include the javah generated headers.
+ CFLAGS_JDKLIB += -I$(JDK_OUTPUTDIR)/gensrc_headers $(WARNING_CFLAGS)
+ CXXFLAGS_JDKLIB += -I$(JDK_OUTPUTDIR)/gensrc_headers $(WARNING_CFLAGS)

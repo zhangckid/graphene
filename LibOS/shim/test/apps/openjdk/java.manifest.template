@@ -34,8 +34,8 @@ fs.mount.nsswitch.uri = file:nsswitch.conf
 glibc.heap_size = 16M
 sys.stack.size = 4M
 sys.brk.size = 64M
-sgx.enclave_size = 8G
-sgx.thread_num = 32
+sgx.enclave_size = 2G
+sgx.thread_num = 16
 
 sgx.trusted_files.ld = file:$(LIBCDIR)/ld-linux-x86-64.so.2
 sgx.trusted_files.libc = file:$(LIBCDIR)/libc.so.6

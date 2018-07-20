@@ -3,15 +3,16 @@ SRC_VERSION = 8u
 SRC_HG_URL = http://hg.openjdk.java.net/jdk$(SRC_VERSION)/jdk$(SRC_VERSION)/
 SRC_HG_REV = 7abd14dd301d
 SRC_DIR = jdk$(SRC_VERSION)
+JAVA_DEBUG_LEVEL = fastdebug
 INSTALL_DIR = build
-JAVA_HOME = $(INSTALL_DIR)/jvm/openjdk-$(JAVA_VERSION)-internal/jre
-JAVAC = $(INSTALL_DIR)/jvm/openjdk-$(JAVA_VERSION)-internal/bin/javac
+JAVA_HOME = $(INSTALL_DIR)/jvm/openjdk-$(JAVA_VERSION)-internal$(if $(filter release,$(JAVA_DEBUG_LEVEL)),,-$(JAVA_DEBUG_LEVEL)/jre)
+JAVAC = $(JAVA_HOME)/../bin/javac
 
 CLASSES = $(patsubst %.java,%.class,$(wildcard classes/*.java))
 SUITES = classes/apache-sshd-1.2.0/sshd-core/target/sshd-core-1.2.0.jar \
 	 classes/jmh-jdk-1.0/target/jmh-jdk-microbenchmarks-1.0-SNAPSHOT.jar
 
-target = $(JAVA_HOME) $(CLASSES) $(SUITES)
+target = $(CLASSES) build-java
 exec_target = java.manifest
 
 clean-extra = clean-classes
@@ -23,16 +24,29 @@ extra_rules = \
 level = ../../
 include ../../Makefile
 
-$(JAVA_HOME): $(SRC_DIR)/configure
-	cd $(SRC_DIR) && sh configure --prefix=$(abspath $(INSTALL_DIR))
-	cd $(SRC_DIR) && make install
+.PHONY: build-java
+build-java: $(JAVA_HOME)/bin/java
+
+$(JAVA_HOME)/bin/java: $(SRC_DIR)/configure
+	cd $(SRC_DIR) && sh configure --prefix=$(abspath $(INSTALL_DIR)) \
+		--with-jvm-variants=server \
+		--disable-headful --enable-openjdk-only \
+		--disable-zip-debug-info \
+		--with-debug-level=fastdebug
+	cd $(SRC_DIR) && make install LOG=debug
+
+java.manifest: $(JAVA_HOME)/bin/java
 
 $(SRC_DIR)/configure:
 	hg clone $(SRC_HG_URL) -r $(SRC_HG_REV)
 	cd $(SRC_DIR) && sh get_source.sh
+	cd $(SRC_DIR) && patch -p1 < ../openjdk8-enclave.patch
 
 %.class: %.java
 	javac $<
+
+.PHONY: test-suites
+test-suites: $(SUITES)
 
 classes/apache-sshd-1.2.0/sshd-core/target/sshd-core-1.2.0.jar:
 	cd classes && wget http://archive.apache.org/dist/mina/sshd/1.2.0/apache-sshd-1.2.0-src.tar.gz
@@ -45,5 +59,11 @@ classes/jmh-jdk-1.0/target/jmh-jdk-microbenchmarks-1.0-SNAPSHOT.jar:
 	cd classes/jmh-jdk-1.0 && tar -xzf ../jmh-jdk-1.0.tar.gz --strip-components=1
 	cd classes/jmh-jdk-1.0 && mvn install -Dcheckstyle.skip -Dmaven.test.skip=true
 
+.PHONY: clean-classes
 clean-classes:
 	rm -f classes/*.class
+
+.PHONY: distclean
+distclean: clean
+	rm -rf $(SRC_DIR) $(INSTALL_DIR)
+	rm -ff $(SUITES)

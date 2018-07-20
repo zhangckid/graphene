@@ -620,8 +620,6 @@ void handle_signal (bool delayed_only)
 
     struct shim_thread * thread = (struct shim_thread *) tcb->tp;
 
-    debug("handle signal (counter = %d)\n", thread->has_signal.counter);
-
     /* Fast path */
     if (!thread->has_signal.counter)
         return;
