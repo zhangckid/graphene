@@ -15,7 +15,7 @@ new file mode 100644
 index 0000000..ebfc96d
 --- /dev/null
 +++ b/hotspot/make/linux/makefiles/enclave.make
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,36 @@
 +#
 +# Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
 +# DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
