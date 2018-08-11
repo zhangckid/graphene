@@ -3,9 +3,13 @@ SRC_VERSION = 8u
 SRC_HG_URL = http://hg.openjdk.java.net/jdk$(SRC_VERSION)/jdk$(SRC_VERSION)/
 SRC_HG_REV = 7abd14dd301d
 SRC_DIR = jdk$(SRC_VERSION)
+ifeq ($(DEBUG),1)
 JAVA_DEBUG_LEVEL = fastdebug
+else
+JAVA_DEBUG_LEVEL = release
+endif
 INSTALL_DIR = build
-JAVA_HOME = $(INSTALL_DIR)/jvm/openjdk-$(JAVA_VERSION)-internal$(if $(filter release,$(JAVA_DEBUG_LEVEL)),,-$(JAVA_DEBUG_LEVEL)/jre)
+JAVA_HOME = $(INSTALL_DIR)/jvm/openjdk-$(JAVA_VERSION)-internal$(if $(filter release,$(JAVA_DEBUG_LEVEL)),,-$(JAVA_DEBUG_LEVEL))/jre
 JAVAC = $(JAVA_HOME)/../bin/javac
 
 CLASSES = $(patsubst %.java,%.class,$(wildcard classes/*.java))
@@ -13,13 +17,14 @@ SUITES = classes/apache-sshd-1.2.0/sshd-core/target/sshd-core-1.2.0.jar \
 	 classes/jmh-jdk-1.0/target/jmh-jdk-microbenchmarks-1.0-SNAPSHOT.jar
 
 target = $(CLASSES) build-java
-exec_target = java.manifest
+exec_target = java.manifest ls.manifest
 
 clean-extra = clean-classes
 
+ABSPATH_IN_MANIFEST := yes
 extra_rules = \
 	-e 's:\$$(DEBUGTYPE):$(if $(DEBUG),inline,none):g' \
-	-e 's:\$$(JAVA_HOME):$(JAVA_HOME):g'
+	-e 's:\$$(JAVA_HOME):$(abspath $(JAVA_HOME)):g'
 
 level = ../../
 include ../../Makefile
@@ -32,7 +37,7 @@ $(JAVA_HOME)/bin/java: $(SRC_DIR)/configure
 		--with-jvm-variants=server \
 		--disable-headful --enable-openjdk-only \
 		--disable-zip-debug-info \
-		--with-debug-level=fastdebug
+		--with-debug-level=$(JAVA_DEBUG_LEVEL) JAVA_HOME=
 	cd $(SRC_DIR) && make install LOG=debug
 
 java.manifest: $(JAVA_HOME)/bin/java

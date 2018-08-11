@@ -4,20 +4,29 @@ loader.preload = file:$(SHIMPATH)
 loader.exec = file:$(JAVA_HOME)/bin/java
 loader.execname = java
 loader.env.LD_LIBRARY_PATH = /jre/lib/amd64:/jre/lib/amd64/jli:/graphene:/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu
-loader.env.PATH = /jre/bin:/bin:/usr/bin
+loader.env.JAVA_HOME = /jre
+loader.env.PATH = /jre/bin:/bin
 loader.debug_type = $(DEBUGTYPE)
 
 fs.mount.graphene.type = chroot
 fs.mount.graphene.path = /graphene
 fs.mount.graphene.uri = file:$(LIBCDIR)
 
-fs.mount.host1.type = chroot
-fs.mount.host1.path = /usr/lib/x86_64-linux-gnu
-fs.mount.host1.uri = file:/usr/lib/x86_64-linux-gnu
+fs.mount.lib1.type = chroot
+fs.mount.lib1.path = /usr/lib/x86_64-linux-gnu
+fs.mount.lib1.uri = file:/usr/lib/x86_64-linux-gnu
 
-fs.mount.host2.type = chroot
-fs.mount.host2.path = /lib/x86_64-linux-gnu
-fs.mount.host2.uri = file:/lib/x86_64-linux-gnu
+fs.mount.bin1.type = chroot
+fs.mount.bin1.path = /usr/bin
+fs.mount.bin1.uri = file:/usr/bin
+
+fs.mount.lib2.type = chroot
+fs.mount.lib2.path = /lib/x86_64-linux-gnu
+fs.mount.lib2.uri = file:/lib/x86_64-linux-gnu
+
+fs.mount.bin2.type = chroot
+fs.mount.bin2.path = /bin
+fs.mount.bin2.uri = file:/bin
 
 fs.mount.jre.type = chroot
 fs.mount.jre.path = /jre
@@ -27,15 +36,15 @@ fs.mount.tmp.type = chroot
 fs.mount.tmp.path = /tmp
 fs.mount.tmp.uri = file:/tmp
 
-fs.mount.nsswitch.type = chroot
-fs.mount.nsswitch.path = /etc/nsswitch.conf
-fs.mount.nsswitch.uri = file:nsswitch.conf
+fs.mount.etc.type = chroot
+fs.mount.etc.path = /etc
+fs.mount.etc.uri = file:$(PWD)/etc
 
 glibc.heap_size = 16M
 sys.stack.size = 4M
 sys.brk.size = 64M
-sgx.enclave_size = 2G
-sgx.thread_num = 16
+sgx.enclave_size = 4G
+sgx.thread_num = 48
 
 sgx.trusted_files.ld = file:$(LIBCDIR)/ld-linux-x86-64.so.2
 sgx.trusted_files.libc = file:$(LIBCDIR)/libc.so.6
@@ -57,7 +66,10 @@ sgx.trusted_files.libmanagement = file:$(JAVA_HOME)/lib/amd64/libmanagement.so
 sgx.trusted_files.libnss1 = file:/lib/x86_64-linux-gnu/libnss_dns.so.2
 sgx.trusted_files.libnss2 = file:/lib/x86_64-linux-gnu/libnss_files.so.2
 sgx.trusted_files.libz = file:/lib/x86_64-linux-gnu/libz.so.1
+sgx.trusted_files.libjaas = file:$(JAVA_HOME)/lib/amd64/libjaas_unix.so
 
+
+sgx.trusted_files.logging = file:$(JAVA_HOME)/lib/logging.properties
 sgx.trusted_files.jvmcfg = file:$(JAVA_HOME)/lib/amd64/jvm.cfg
 sgx.trusted_files.meta = file:$(JAVA_HOME)/lib/meta-index
 sgx.trusted_files.tzdb = file:$(JAVA_HOME)/lib/tzdb.dat
@@ -66,9 +78,15 @@ sgx.trusted_files.rt = file:$(JAVA_HOME)/lib/rt.jar
 sgx.trusted_files.jce = file:$(JAVA_HOME)/lib/jce.jar
 sgx.trusted_files.jsse = file:$(JAVA_HOME)/lib/jsse.jar
 sgx.trusted_files.resources = file:$(JAVA_HOME)/lib/resources.jar
-sgx.trusted_files.nsswitch = file:nsswitch.conf
+sgx.trusted_files.charsets = file:$(JAVA_HOME)/lib/charsets.jar
+
+
+sgx.trusted_children.ls = file:$(PWD)/ls.sig
+sgx.trusted_files.ls = file:/bin/ls
 
 sgx.allowed_files.ext = file:$(JAVA_HOME)/lib/ext
 sgx.allowed_files.security = file:$(JAVA_HOME)/lib/security
 sgx.allowed_files.classes = file:classes
+sgx.allowed_files.etc = file:$(PWD)/etc
 sgx.allowed_files.tmp = file:/tmp
+sgx.allowed_files.hadoop = file:$(PWD)/Hadoop
