@@ -36,9 +36,8 @@ static inline __attribute__((always_inline))
 char * __bytes2hexstr(void * hex, size_t size, char *str, size_t len)
 {
     static char * ch = "0123456789abcdef";
-    assert(len >= size * 2 + 1);
 
-    for (size_t i = 0 ; i < size ; i++) {
+    for (size_t i = 0 ; i < size && i * 2 + 1 < len ; i++) {
         unsigned char h = ((unsigned char *) hex)[i];
         str[i * 2] = ch[h / 16];
         str[i * 2 + 1] = ch[h % 16];
