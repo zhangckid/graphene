@@ -7,6 +7,7 @@
 
 #include <pthread.h>
 #include <linux/futex.h>
+#include <linux/wait.h>
 #include <asm/signal.h>
 #include <asm/prctl.h>
 
@@ -24,6 +25,7 @@ struct thread_map {
 static sgx_arch_tcs_t * enclave_tcs;
 static int enclave_thread_num;
 static struct thread_map * enclave_thread_map;
+static pthread_mutex_t thread_lock;
 
 void create_tcs_mapper (void * tcs_base, unsigned int thread_num)
 {
@@ -39,13 +41,17 @@ void create_tcs_mapper (void * tcs_base, unsigned int thread_num)
 
 void map_tcs (unsigned int tid)
 {
+    pthread_mutex_lock(&thread_lock);
     for (int i = 0 ; i < enclave_thread_num ; i++)
         if (!enclave_thread_map[i].tid) {
             enclave_thread_map[i].tid = tid;
+            pthread_mutex_unlock(&thread_lock);
             current_tcs = enclave_thread_map[i].tcs;
             ((struct enclave_dbginfo *) DBGINFO_ADDR)->thread_tids[i] = tid;
-            break;
+            SGX_DBG(DBG_I, "map TCS at 0x%08lx\n", current_tcs);
+            return;
         }
+    pthread_mutex_unlock(&thread_lock);
 }
 
 void unmap_tcs (void)
@@ -57,8 +63,15 @@ void unmap_tcs (void)
     SGX_DBG(DBG_I, "unmap TCS at 0x%08lx\n", map->tcs);
     current_tcs = NULL;
     ((struct enclave_dbginfo *) DBGINFO_ADDR)->thread_tids[index] = 0;
+    pthread_mutex_lock(&thread_lock);
     map->tid = 0;
-    map->tcs = NULL;
+    pthread_mutex_unlock(&thread_lock);
+}
+
+void thread_exit (void)
+{
+    unmap_tcs();
+    INLINE_SYSCALL(exit, 1, 0);
 }
 
 static void * thread_start (void * arg)
@@ -73,7 +86,7 @@ static void * thread_start (void * arg)
     }
 
     ecall_thread_start();
-    unmap_tcs();
+    thread_exit();
     return NULL;
 }
 
@@ -92,5 +105,18 @@ int interrupt_thread (void * tcs)
     if (!map->tid)
         return -PAL_ERROR_INVAL;
     INLINE_SYSCALL(tgkill, 3, PAL_SEC()->pid, map->tid, SIGCONT);
+    return 0;
+}
+
+int wait_thread (void * tcs)
+{
+    int index = (sgx_arch_tcs_t *) tcs - enclave_tcs;
+    struct thread_map * map = &enclave_thread_map[index];
+    if (index >= enclave_thread_num)
+        return -PAL_ERROR_INVAL;
+    if (!map->tid)
+        return -PAL_ERROR_INVAL;
+    int status;
+    INLINE_SYSCALL(wait4, 4, map->tid, &status, __WALL, NULL);
     return 0;
 }

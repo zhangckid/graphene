@@ -64,10 +64,12 @@ int printf(const char * fmt, ...);
         } _ret;                                             \
     })
 
-int ocall_exit(void)
+int sgx_ocall_exit (int code, int exit_status);
+
+int ocall_exit (int exit_status)
 {
     int retval = 0;
-    SGX_OCALL(OCALL_EXIT, NULL);
+    sgx_ocall_exit(OCALL_EXIT, exit_status);
     /* never reach here */
     return retval;
 }
@@ -234,11 +236,11 @@ int ocall_read (int fd, void * buf, unsigned int count)
 
     if (retval > 0)
         memcpy(buf, ms->ms_buf, retval);
-    OCALL_EXIT();
 
     if (obuf)
         ocall_unmap_untrusted(obuf, ALLOC_ALIGNUP(count));
 
+    OCALL_EXIT();
     return retval;
 }
 

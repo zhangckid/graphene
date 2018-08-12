@@ -157,7 +157,7 @@ void pal_linux_main(const char ** arguments, const char ** environments,
     /* if there is a parent, create parent handle */
     if (pal_sec.ppid) {
         if (init_child_process(&parent) < 0)
-            ocall_exit();
+            ocall_exit(OCALL_EXIT_WHOLE_PROCESS);
     }
 
     linux_state.uid = pal_sec.uid;
@@ -191,7 +191,7 @@ void pal_linux_main(const char ** arguments, const char ** environments,
     const char * errstring = NULL;
     if (read_config(root_config, loader_filter, &errstring) < 0) {
         SGX_DBG(DBG_E, "Can't read manifest: %s\n", errstring);
-        ocall_exit();
+        ocall_exit(OCALL_EXIT_WHOLE_PROCESS);
     }
 
     pal_state.root_config = root_config;
