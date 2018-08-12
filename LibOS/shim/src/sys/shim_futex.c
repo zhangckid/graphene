@@ -56,8 +56,8 @@ DEFINE_LISTP(shim_futex_handle);
 static LISTP_TYPE(shim_futex_handle) futex_list = LISTP_INIT;
 static LOCKTYPE futex_list_lock;
 
-int shim_do_futex (unsigned int * uaddr, int op, int val, void * utime,
-                   unsigned int * uaddr2, int val3)
+int shim_do_futex (int * uaddr, int op, int val, void * utime,
+                   int * uaddr2, int val3)
 {
     struct shim_futex_handle * tmp = NULL, * futex = NULL, * futex2 = NULL;
     struct shim_handle * hdl = NULL, * hdl2 = NULL;
@@ -128,25 +128,36 @@ int shim_do_futex (unsigned int * uaddr, int op, int val, void * utime,
     unlock(futex_list_lock);
     lock(hdl->lock);
     uint64_t timeout_us = NO_TIMEOUT;
+    int uval = *uaddr;
 
     switch (futex_op) {
         case FUTEX_WAIT_BITSET:
-            if (utime && timeout_us == NO_TIMEOUT) {
-                struct timespec *ts = (struct timespec*) utime;
-                // Round to microsecs
-                timeout_us = (ts->tv_sec * 1000000) + (ts->tv_nsec / 1000);
+            if (utime) {
+                struct timespec * ts = (struct timespec*) utime;
+                timeout_us = 1000000ULL * ts->tv_sec + ts->tv_nsec / 1000;
                 // Check for the CLOCK_REALTIME flag
-                if (futex_op == FUTEX_WAIT_BITSET)  {
-                    // DEP 1/28/17: Should really differentiate clocks, but
-                    // Graphene only has one for now.
-                    //&& 0 != (op & FUTEX_CLOCK_REALTIME)) {
-                    uint64_t current_time = DkSystemTimeQuery();
-                    if (current_time == 0) {
-                        ret = -EINVAL;
-                        break;
-                    }
-                    timeout_us -= current_time;
+
+                // DEP 1/28/17: Should really differentiate clocks, but
+                // Graphene only has one for now.
+                // if (op & FUTEX_CLOCK_REALTIME)
+
+                uint64_t current_time = DkSystemTimeQuery();
+                if (current_time == 0) {
+                    ret = -EINVAL;
+                    break;
                 }
+
+                debug("FUTEX_WAIT_BITSET: timeout (%lu, %lu) = %llu "
+                      "current time = %llu\n",
+                      ts->tv_sec, ts->tv_nsec, timeout_us, current_time);
+
+                if (timeout_us < current_time) {
+                    debug("FUTEX_WAIT_BITSET: timed out already\n");
+                    ret = -ETIMEDOUT;
+                    break;
+                }
+
+                timeout_us -= current_time;
             }
 
         /* Note: for FUTEX_WAIT, timeout is interpreted as a relative
@@ -160,17 +171,19 @@ int shim_do_futex (unsigned int * uaddr, int op, int val, void * utime,
             if (utime && timeout_us == NO_TIMEOUT) {
                 struct timespec *ts = (struct timespec*) utime;
                 // Round to microsecs
-                timeout_us = (ts->tv_sec * 1000000) + (ts->tv_nsec / 1000);
+                timeout_us = 1000000ULL * ts->tv_sec + ts->tv_nsec / 1000;
+                debug("FUTEX_WAIT: timeout (%lu, %lu) = %lu usec\n",
+                      ts->tv_sec, ts->tv_nsec, timeout_us);
             }
 
         {
             uint32_t bitset = (futex_op == FUTEX_WAIT_BITSET) ? val3 :
                               0xffffffff;
 
-            debug("FUTEX_WAIT: %p (val = %d) vs %d mask = %08x, timeout ptr %p\n",
-                  uaddr, *uaddr, val, bitset, utime);
+            debug("FUTEX_WAIT: %p (val = %d) vs %d mask = %08x, timeout %lld\n",
+                  uaddr, uval, val, bitset, timeout_us);
 
-            if (*uaddr != val) {
+            if (uval != val) {
                 ret = -EAGAIN;
                 break;
             }
@@ -197,9 +210,9 @@ int shim_do_futex (unsigned int * uaddr, int op, int val, void * utime,
             int nwaken = 0;
             uint32_t bitset = (futex_op == FUTEX_WAKE_BITSET) ? val3 :
                               0xffffffff;
-            
+
             debug("FUTEX_WAKE: %p (val = %d) count = %d mask = %08x\n",
-                  uaddr, *uaddr, val, bitset);
+                  uaddr, uval, val, bitset);
 
             listp_for_each_entry_safe(waiter, wtmp, &futex->waiters, list) {
                 if (!(bitset & waiter->bitset))
@@ -215,39 +228,55 @@ int shim_do_futex (unsigned int * uaddr, int op, int val, void * utime,
             }
 
             ret = nwaken;
-            debug("FUTEX_WAKE done: %p (val = %d) woke %d threads\n", uaddr, *uaddr, ret);
+            debug("FUTEX_WAKE done: %p (val = %d) woke %d threads\n",
+                  uaddr, uval, ret);
             break;
         }
 
         case FUTEX_WAKE_OP: {
+            debug("FUTEX_WAKE_OP: %p (val = %d) uaddr2 %p (val = %d) count = %d\n",
+                  uaddr, uval, uaddr2, *uaddr2, val);
+
             assert(futex2);
-            int oldval = *(int *) uaddr2, newval, cmpval;
-
-            newval = (val3 >> 12) & 0xfff;
-            switch ((val3 >> 28) & 0xf) {
-                case FUTEX_OP_SET:  break;
-                case FUTEX_OP_ADD:  newval = oldval + newval;  break;
-                case FUTEX_OP_OR:   newval = oldval | newval;  break;
-                case FUTEX_OP_ANDN: newval = oldval & ~newval; break;
-                case FUTEX_OP_XOR:  newval = oldval ^ newval;  break;
+            int op = (val3 >> 28) & 0xf, oparg = (val3 >> 12) & 0xfff;
+            int uval2, newval;
+            if (op == FUTEX_OP_SET) {
+                newval = oparg;
+                uval2 = xchg32(uaddr2, newval);
+            } else {
+                do {
+                    uval2 = *(volatile int *) uaddr2;
+                    switch (op) {
+                        case FUTEX_OP_ADD:  newval = uval2 + oparg;  break;
+                        case FUTEX_OP_OR:   newval = uval2 | oparg;  break;
+                        case FUTEX_OP_ANDN: newval = uval2 & ~oparg; break;
+                        case FUTEX_OP_XOR:  newval = uval2 ^ oparg;  break;
+                        default: bug(); /* XXX: return EINVAL */
+                    }
+                } while(cmpxchg32(uaddr2, uval2, newval) != uval2);
             }
 
-            cmpval = val3 & 0xfff;
-            switch ((val3 >> 24) & 0xf) {
-                case FUTEX_OP_CMP_EQ: cmpval = (oldval == cmpval); break;
-                case FUTEX_OP_CMP_NE: cmpval = (oldval != cmpval); break;
-                case FUTEX_OP_CMP_LT: cmpval = (oldval < cmpval);  break;
-                case FUTEX_OP_CMP_LE: cmpval = (oldval <= cmpval); break;
-                case FUTEX_OP_CMP_GT: cmpval = (oldval > cmpval);  break;
-                case FUTEX_OP_CMP_GE: cmpval = (oldval >= cmpval); break;
+            debug("FUTEX_WAKE_OP: %p (val = %d -> %d)\n",
+                  uaddr2, uval2, newval);
+
+            int cmpop = (val3 >> 24) & 0xf;
+            int cmparg = val3 & 0xfff, cmpval;
+            debug("FUTEX_WAKE_OP: %d CMP(%d) %d\n", uval2, cmpop, cmparg);
+            switch (cmpop) {
+                case FUTEX_OP_CMP_EQ: cmpval = (uval2 == cmparg); break;
+                case FUTEX_OP_CMP_NE: cmpval = (uval2 != cmparg); break;
+                case FUTEX_OP_CMP_LT: cmpval = (uval2 < cmparg);  break;
+                case FUTEX_OP_CMP_LE: cmpval = (uval2 <= cmparg); break;
+                case FUTEX_OP_CMP_GT: cmpval = (uval2 > cmparg);  break;
+                case FUTEX_OP_CMP_GE: cmpval = (uval2 >= cmparg); break;
+                default: bug(); /* XXX: return EINVAL */
             }
 
-            *(int *) uaddr2 = newval;
             struct futex_waiter * waiter, * wtmp;
             int nwaken = 0;
-            debug("FUTEX_WAKE_OP: %p (val = %d) count = %d\n", uaddr, *uaddr, val);
+
             listp_for_each_entry_safe(waiter, wtmp, &futex->waiters, list) {
-                debug("FUTEX_WAKE_OP wake thread %d: %p (val = %d)\n",
+                debug("FUTEX_WAKE wake thread %d: %p (val = %d)\n",
                       waiter->thread->tid, uaddr, *uaddr);
                 listp_del_init(waiter, &futex->waiters, list);
                 thread_wakeup(waiter->thread);
@@ -259,10 +288,10 @@ int shim_do_futex (unsigned int * uaddr, int op, int val, void * utime,
                 put_handle(hdl);
                 hdl = hdl2;
                 lock(hdl->lock);
-                debug("FUTEX_WAKE: %p (val = %d) count = %d\n", uaddr2,
-                      *uaddr2, val2);
+                debug("FUTEX_WAKE: %p (val = %d) count = %d\n",
+                      uaddr2, *uaddr2, val2);
                 listp_for_each_entry_safe(waiter, wtmp, &futex2->waiters, list) {
-                    debug("FUTEX_WAKE_OP(2) wake thread %d: %p (val = %d)\n",
+                    debug("FUTEX_WAKE wake thread %d: %p (val = %d)\n",
                           waiter->thread->tid, uaddr2, *uaddr2);
                     listp_del_init(waiter, &futex2->waiters, list);
                     thread_wakeup(waiter->thread);
@@ -274,7 +303,7 @@ int shim_do_futex (unsigned int * uaddr, int op, int val, void * utime,
         }
 
         case FUTEX_CMP_REQUEUE:
-            if (*uaddr != val3) {
+            if (uval != val3) {
                 ret = -EAGAIN;
                 break;
             }

@@ -44,6 +44,10 @@ Copyright (C) 2005-2014 Rich Felker, et al.
     ----------------------------------------------------------------------
 */
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Optimization barrier */
 #define barrier()    __asm__ __volatile__("": : :"memory")
 # define cpu_relax() __asm__ __volatile__("rep; nop" ::: "memory");
@@ -163,8 +167,16 @@ static inline int64_t atomic_dec_and_test (struct atomic_int * v)
 static inline int64_t cmpxchg(volatile int64_t *p, int64_t t, int64_t s)
 {
     __asm__ __volatile__ (
-        "lock ; cmpxchg %3, %1"
-        : "=a"(t), "=m"(*p) : "a"(t), "r"(s) : "memory" );
+        "lock ; cmpxchgq %3, %1"
+        : "=a"(t), "+m"(*p) : "0"(t), "r"(s) : "memory" );
+    return t;
+}
+
+static inline int32_t cmpxchg32(volatile int32_t *p, int32_t t, int32_t s)
+{
+    __asm__ __volatile__ (
+        "lock ; cmpxchgl %3, %1"
+        : "=a"(t), "+m"(*p) : "0"(t), "r"(s) : "memory" );
     return t;
 }
 
@@ -175,5 +187,26 @@ static inline int64_t atomic_cmpxchg (struct atomic_int * v, int64_t old, int64_
 {
     return cmpxchg(&v->counter, old, new);
 }
+
+static inline int64_t xchg(volatile int64_t *p, int64_t s)
+{
+    __asm__ __volatile__ (
+        "lock ; xchgq %0, %1"
+        : "+a"(s), "+m"(*p) : : "memory" );
+    return s;
+}
+
+static inline int32_t xchg32(volatile int32_t *p, int32_t s)
+{
+    __asm__ __volatile__ (
+        "lock ; xchgl %0, %1"
+        : "+a"(s), "+m"(*p) : : "memory" );
+    return s;
+}
+
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _ATOMIC_INT_H_ */
