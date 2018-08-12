@@ -13,11 +13,10 @@ JAVA_HOME = $(INSTALL_DIR)/jvm/openjdk-$(JAVA_VERSION)-internal$(if $(filter rel
 JAVAC = $(JAVA_HOME)/../bin/javac
 
 CLASSES = $(patsubst %.java,%.class,$(wildcard classes/*.java))
-SUITES = classes/apache-sshd-1.2.0/sshd-core/target/sshd-core-1.2.0.jar \
-	 classes/jmh-jdk-1.0/target/jmh-jdk-microbenchmarks-1.0-SNAPSHOT.jar
+SUITES = classes/jmh-jdk-1.0/target/jmh-jdk-microbenchmarks-1.0-SNAPSHOT.jar
 
 target = $(CLASSES) build-java
-exec_target = java.manifest ls.manifest
+exec_target = java.manifest
 
 clean-extra = clean-classes
 
@@ -52,11 +51,6 @@ $(SRC_DIR)/configure:
 
 .PHONY: test-suites
 test-suites: $(SUITES)
-
-classes/apache-sshd-1.2.0/sshd-core/target/sshd-core-1.2.0.jar:
-	cd classes && wget http://archive.apache.org/dist/mina/sshd/1.2.0/apache-sshd-1.2.0-src.tar.gz
-	cd classes && tar -xzf apache-sshd-1.2.0-src.tar.gz
-	cd classes/apache-sshd-1.2.0 && mvn install -Dcheckstyle.skip -Dmaven.test.skip=true
 
 classes/jmh-jdk-1.0/target/jmh-jdk-microbenchmarks-1.0-SNAPSHOT.jar:
 	cd classes && wget http://hg.openjdk.java.net/code-tools/jmh-jdk-microbenchmarks/archive/tip.tar.gz -O jmh-jdk-1.0.tar.gz

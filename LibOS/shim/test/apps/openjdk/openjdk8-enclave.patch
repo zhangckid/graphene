@@ -1,4 +1,17 @@
 diff --git a/hotspot/make/linux/makefiles/vm.make b/hotspot/make/linux/makefiles/vm.make
+index 68c80d1..de86d81 100644
+--- a/hotspot/make/linux/makefiles/vm.make
++++ b/hotspot/make/linux/makefiles/vm.make
+@@ -220,6 +220,8 @@ endif
+ # by the definition of Src_Files.
+ -include $(HS_ALT_MAKE)/$(Platform_os_family)/makefiles/vm.make
+ 
++-include $(MAKEFILES_DIR)/enclave.make
++
+ # Locate all source files in the given directory, excluding files in Src_Files_EXCLUDE.
+ define findsrc
+ 	$(notdir $(shell find $(1)/. ! -name . -prune \
+diff --git a/hotspot/make/linux/makefiles/vm.make b/hotspot/make/linux/makefiles/vm.make
 index 8f836fe..ff510ee 100644
 --- a/hotspot/make/linux/makefiles/vm.make
 +++ b/hotspot/make/linux/makefiles/vm.make
@@ -52,49 +65,6 @@ index 0000000..ebfc96d
 +CXXFLAGS += -DENCLAVE -Os -ffunction-sections -fdata-sections
 +CFLAGS += -DENCLAVE -Os -ffunction-sections -fdata-sections
 +LFLAGS += -Wl,-z,max-page-size=0x1000 -Wl,--gc-sections
-diff --git a/hotspot/src/os/linux/vm/os_linux.cpp b/hotspot/src/os/linux/vm/os_linux.cpp
-index df70123..ed098c7 100644
---- a/hotspot/src/os/linux/vm/os_linux.cpp
-+++ b/hotspot/src/os/linux/vm/os_linux.cpp
-@@ -267,6 +267,9 @@ static const char *unstable_chroot_error = "/proc file system not found.\n"
-                      "environment on Linux when /proc filesystem is not mounted.";
- 
- void os::Linux::initialize_system_info() {
-+#ifdef ENCLAVE
-+  set_processor_count(1);
-+#else
-   set_processor_count(sysconf(_SC_NPROCESSORS_CONF));
-   if (processor_count() == 1) {
-     pid_t pid = os::Linux::gettid();
-@@ -279,6 +282,7 @@ void os::Linux::initialize_system_info() {
-       fclose(fp);
-     }
-   }
-+#endif
-   _physical_memory = (julong)sysconf(_SC_PHYS_PAGES) * (julong)sysconf(_SC_PAGESIZE);
-   assert(processor_count() > 0, "linux error");
- }
-@@ -5040,6 +5044,12 @@ void os::make_polling_page_readable(void) {
-   }
- };
- 
-+#ifdef ENCLAVE
-+int os::active_processor_count() {
-+  /* assume only one active processor */
-+  return (1);
-+}
-+#else
- static int os_cpu_count(const cpu_set_t* cpus) {
-   int count = 0;
-   // only look up to the number of configured processors
-@@ -5077,6 +5087,7 @@ int os::active_processor_count() {
-   assert(cpu_count > 0 && cpu_count <= processor_count(), "sanity check");
-   return cpu_count;
- }
-+#endif /* !ENCLAVE */
- 
- void os::set_native_thread_name(const char *name) {
-   // Not yet implemented.
 diff --git a/hotspot/src/share/vm/compiler/compileBroker.cpp b/hotspot/src/share/vm/compiler/compileBroker.cpp
 index dad99ec..bcfd6f1 100644
 --- a/hotspot/src/share/vm/compiler/compileBroker.cpp

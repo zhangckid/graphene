@@ -80,10 +80,6 @@ sgx.trusted_files.jsse = file:$(JAVA_HOME)/lib/jsse.jar
 sgx.trusted_files.resources = file:$(JAVA_HOME)/lib/resources.jar
 sgx.trusted_files.charsets = file:$(JAVA_HOME)/lib/charsets.jar
 
-
-sgx.trusted_children.ls = file:$(PWD)/ls.sig
-sgx.trusted_files.ls = file:/bin/ls
-
 sgx.allowed_files.ext = file:$(JAVA_HOME)/lib/ext
 sgx.allowed_files.security = file:$(JAVA_HOME)/lib/security
 sgx.allowed_files.classes = file:classes
