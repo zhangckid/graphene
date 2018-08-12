@@ -423,6 +423,9 @@ static int __chroot_open (struct shim_dentry * dent,
             if (!palhdl)
                 return -PAL_ERRNO;
         }
+
+        if (creat)
+            data->queried = false;
     }
 
     if (!data->queried) {

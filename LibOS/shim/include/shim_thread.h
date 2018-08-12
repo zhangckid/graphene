@@ -190,10 +190,8 @@ void set_cur_thread (struct shim_thread * thread)
         bug();
     }
 
-    if (tcb->tid != tid) {
-        tcb->tid = tid;
-        debug_setprefix(tcb);
-    }
+    tcb->tid = tid;
+    debug_setprefix(tcb);
 }
 
 static inline void thread_setwait (struct shim_thread ** queue,
