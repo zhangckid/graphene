@@ -45,6 +45,7 @@ $(SRC_DIR)/configure:
 	hg clone $(SRC_HG_URL) -r $(SRC_HG_REV)
 	cd $(SRC_DIR) && sh get_source.sh
 	cd $(SRC_DIR) && patch -p1 < ../openjdk8-enclave.patch
+	cd $(SRC_DIR) && patch -p1 < ../8187667-pr3517-readdir_r.patch
 
 %.class: %.java
 	javac $<
