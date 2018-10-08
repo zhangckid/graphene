@@ -21,6 +21,11 @@ struct shim_dentry;
 struct shim_signal_handle;
 struct shim_signal_log;
 
+struct groups_info {
+    int size;
+    IDTYPE * spl_gid;
+};
+
 DEFINE_LIST(shim_thread);
 DEFINE_LISTP(shim_thread);
 struct shim_thread {
@@ -32,6 +37,8 @@ struct shim_thread {
 
     /* credentials */
     IDTYPE uid, gid, euid, egid;
+    /* Supplementary groups list */
+    struct groups_info * groups;
 
     /* thread pal handle */
     PAL_HANDLE pal_handle;
